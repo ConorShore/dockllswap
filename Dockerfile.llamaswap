@@ -1,0 +1,54 @@
+# ---------- Global build args (pin versions here) ----------
+ARG LLAMA_CPP_TAG=b7921         # https://github.com/ggml-org/llama.cpp/releases
+ARG LLAMA_SWAP_TAG=v189          # https://github.com/mostlygeek/llama-swap/releases
+ARG CMAKE_VERSION=4.2.2        # CMake version to install for ARM64 build
+
+ARG DEBIAN_VERSION=trixie
+
+# ---------- Stage 2: runtime with CUDA + llama-swap + llama-server ----------
+FROM debian:${DEBIAN_VERSION} AS base
+
+# Re-declare args used in this stage
+ARG LLAMA_SWAP_TAG
+ARG SWAP_ARCH=linux_arm64
+ARG DEBIAN_VERSION
+
+# Runtime deps (curl for fetching llama-swap; libcurl4 for CURL-enabled server; libgomp1 for OpenMP)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates curl libgomp1 libcurl4 && \
+    rm -rf /var/lib/apt/lists/*
+
+# Fetch llama-swap from the pinned tag; strip leading 'v' for the asset filename
+RUN set -eux; \
+    ver_no_v="${LLAMA_SWAP_TAG#v}"; \
+    curl -L -o /tmp/llama-swap.tgz \
+      "https://github.com/mostlygeek/llama-swap/releases/download/${LLAMA_SWAP_TAG}/llama-swap_${ver_no_v}_${SWAP_ARCH}.tar.gz"; \
+    tar -xzf /tmp/llama-swap.tgz -C /usr/local/bin llama-swap; \
+    chmod +x /usr/local/bin/llama-swap; \
+    rm -f /tmp/llama-swap.tgz
+
+ # Add Docker's official GPG key: 
+RUN \
+    apt update &&\
+    apt install ca-certificates curl 
+RUN install -m 0755 -d /etc/apt/keyrings &&\
+    curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc &&\
+    chmod a+r /etc/apt/keyrings/docker.asc 
+#COPY ./docker.sources /etc/apt/sources.list.d/docker.sources 
+RUN cat > /etc/apt/sources.list.d/docker.sources << 'DOCKER_SOURCES'
+Types: deb
+URIs: https://download.docker.com/linux/debian
+Suites: trixie
+Components: stable
+Signed-By: /etc/apt/keyrings/docker.asc
+DOCKER_SOURCES
+
+RUN  apt update 
+
+RUN apt install -y --no-install-recommends docker-ce-cli docker-compose-plugin
+
+WORKDIR /app
+EXPOSE 8080
+
+# llama-swap reads /app/config.yaml (mount it there via Compose)
+ENTRYPOINT ["llama-swap", "--config", "/app/config.yaml", "--listen", "0.0.0.0:8080", "-watch-config"]

@@ -1,0 +1,745 @@
+# =============================================================================
+# Docker Compose for GPT-OSS-120B with MXFP4 on DGX Spark (SM121/GB10)
+# =============================================================================
+#
+# Achieves 59.4 tok/s decode with CUTLASS MXFP4 kernel.
+#
+# Usage:
+#   docker compose build                 # Build the image
+#   docker compose up -d                 # Start the service
+#   docker compose logs -f               # View logs
+#   docker compose down                  # Stop the service
+#
+# Benchmark:
+#   docker compose exec vllm-mxfp4 llama-benchy \
+#       --base-url http://localhost:8000/v1 \
+#       --model gpt-oss-120b \
+#       --tokenizer openai/gpt-oss-120b \
+#       --pp 2048 --tg 32 128
+#
+# =============================================================================
+
+services:
+  qwen3-embedding-8b:
+    build:
+      context: .
+      dockerfile: Dockerfile.vllm
+      args:
+        BUILD_JOBS: 16
+    image: vllm-mxfp4-spark:latest
+    container_name: vllm-qwen3-embedding-8b
+    restart: no
+    networks:
+        - llama-net
+    
+    # GPU access
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    
+    # Shared memory for CUDA IPC
+    ipc: host
+    
+    # Resource limits
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    
+    # Persistent volumes
+    volumes:
+      # HuggingFace model cache (required)
+      - /home/cshore/.cache/huggingface:/root/.cache/huggingface
+      # FlashInfer JIT cache (speeds up startup after first run)
+      - /home/cshore/repo/spark-vllm-mxfp4-docker/.cache/flashinfer:/root/.cache/flashinfer
+      # vLLM cache
+      - /home/cshore/repo/spark-vllm-mxfp4-docker/.cache/vllm:/root/.cache/vllm
+      # Ccache for rebuilds
+      - /home/cshore/repo/spark-vllm-mxfp4-docker/.cache/ccache:/root/.ccache
+    
+    # Environment configuration
+    environment:
+      # FlashInfer settings
+      - FLASHINFER_LOGLEVEL=0
+      - FLASHINFER_JIT_VERBOSE=0
+      - FLASHINFER_NVCC_THREADS=4
+      - VLLM_NO_USAGE_STATS=1
+      - DO_NOT_TRACK=1
+      
+      
+      # Tiktoken encodings
+      - TIKTOKEN_ENCODINGS_BASE=/workspace/tiktoken_encodings
+
+    # vLLM server command with optimized settings
+    command: >
+      vllm serve qwen/qwen3-embedding-8b
+        --host 0.0.0.0
+        --port 8000
+        --served-model-name qwen3-embedding-8b
+        --kv-cache-dtype fp8
+        --tensor-parallel-size 1
+        --enable-prefix-caching
+        --load-format fastsafetensors
+        --gpu_memory_utilization 0.15
+        --enable-prompt-embeds
+        --max-model-len 4096
+        --max-num-seqs 256
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 300s   
+
+  qwen3-reranker-8b:
+    image: vllm-mxfp4-spark:latest
+    container_name: vllm-qwen3-reranker-8b
+    restart: no
+    networks:
+        - llama-net
+    
+    # GPU access
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    
+    # Shared memory for CUDA IPC
+    ipc: host
+    
+    # Resource limits
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    
+    # Persistent volumes
+    volumes:
+      # HuggingFace model cache (required)
+      - /home/cshore/.cache/huggingface:/root/.cache/huggingface
+      # FlashInfer JIT cache (speeds up startup after first run)
+      - /home/cshore/repo/spark-vllm-mxfp4-docker/.cache/flashinfer:/root/.cache/flashinfer
+      # vLLM cache
+      - /home/cshore/repo/spark-vllm-mxfp4-docker/.cache/vllm:/root/.cache/vllm
+      # Ccache for rebuilds
+      - /home/cshore/repo/spark-vllm-mxfp4-docker/.cache/ccache:/root/.ccache
+    
+    # Environment configuration
+    environment:
+      # FlashInfer settings
+      - FLASHINFER_LOGLEVEL=0
+      - FLASHINFER_JIT_VERBOSE=0
+      - FLASHINFER_NVCC_THREADS=4
+      - VLLM_NO_USAGE_STATS=1
+      - DO_NOT_TRACK=1
+      
+      
+      # Tiktoken encodings
+      - TIKTOKEN_ENCODINGS_BASE=/workspace/tiktoken_encodings
+
+    # vLLM server command with optimized settings
+    command: >
+      vllm serve qwen/qwen3-reranker-8b
+        --host 0.0.0.0
+        --port 8000
+        --served-model-name qwen3-reranker-8b
+        --kv-cache-dtype fp8
+        --tensor-parallel-size 1
+        --enable-prefix-caching
+        --load-format fastsafetensors
+        --gpu_memory_utilization 0.4
+        --max-model-len 4096
+        --max-num-seqs 256
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 300s  
+
+  gpt-oss-120b-131072:
+    image: vllm-mxfp4-spark:latest
+    container_name: gpt-oss-120b-131072
+    restart: no
+    networks:
+        - llama-net
+    # GPU access
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+    # Shared memory for CUDA IPC
+    ipc: host
+    
+    # Resource limits
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    
+    # Persistent volumes
+    volumes:
+      # HuggingFace model cache (required)
+      - /home/cshore/.cache/huggingface:/root/.cache/huggingface
+      # FlashInfer JIT cache (speeds up startup after first run)
+      - /home/cshore/repo/spark-vllm-mxfp4-docker/.cache/flashinfer:/root/.cache/flashinfer
+      # vLLM cache
+      - /home/cshore/repo/spark-vllm-mxfp4-docker/.cache/vllm:/root/.cache/vllm
+      # Ccache for rebuilds
+      - /home/cshore/repo/spark-vllm-mxfp4-docker/.cache/ccache:/root/.ccache
+    
+    # Environment configuration
+    environment:
+      # FlashInfer settings
+      - FLASHINFER_LOGLEVEL=0
+      - FLASHINFER_JIT_VERBOSE=0
+      - FLASHINFER_NVCC_THREADS=4
+      - VLLM_NO_USAGE_STATS=1
+      - DO_NOT_TRACK=1
+      
+      # Tiktoken encodings
+      - TIKTOKEN_ENCODINGS_BASE=/workspace/tiktoken_encodings
+    
+    # vLLM server command with optimized settings
+    command: >
+      vllm serve openai/gpt-oss-120b
+        --host 0.0.0.0
+        --port 8000
+        --served-model-name gpt-oss-120b-131072
+        --quantization mxfp4
+        --mxfp4-backend CUTLASS
+        --mxfp4-layers moe,qkv,o,lm_head
+        --attention-backend FLASHINFER
+        --kv-cache-dtype fp8
+        --tensor-parallel-size 1
+        --max-model-len 131072
+        --max-num-seqs 3
+        --max-num-batched-tokens 65536
+        --enable-prefix-caching
+        --load-format fastsafetensors
+        --gpu_memory_utilization 0.7
+        --tool-call-parser openai
+        --enable-auto-tool-choice
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 300s
+
+  vllm-mxfp4-gpt-oss-20b-32768:
+      image: vllm-mxfp4-spark:latest
+      container_name: vllm-mxfp4-gpt-oss-20b-32768
+      restart: no
+      networks:
+          - llama-net
+      
+      # GPU access
+      deploy:
+        resources:
+          reservations:
+            devices:
+              - driver: nvidia
+                count: all
+                capabilities: [gpu]
+      
+      # Shared memory for CUDA IPC
+      ipc: host
+      
+      # Resource limits
+      ulimits:
+        memlock: -1
+        stack: 67108864
+      
+      # Persistent volumes
+      volumes:
+      # HuggingFace model cache (required)
+      - /home/cshore/.cache/huggingface:/root/.cache/huggingface
+      # FlashInfer JIT cache (speeds up startup after first run)
+      - /home/cshore/repo/spark-vllm-mxfp4-docker/.cache/flashinfer:/root/.cache/flashinfer
+      # vLLM cache
+      - /home/cshore/repo/spark-vllm-mxfp4-docker/.cache/vllm:/root/.cache/vllm
+      # Ccache for rebuilds
+      - /home/cshore/repo/spark-vllm-mxfp4-docker/.cache/ccache:/root/.ccache
+      
+      # Environment configuration
+      environment:
+        # FlashInfer settings
+        - FLASHINFER_LOGLEVEL=0
+        - FLASHINFER_JIT_VERBOSE=0
+        - FLASHINFER_NVCC_THREADS=4
+        - VLLM_NO_USAGE_STATS=1
+        - DO_NOT_TRACK=1
+        
+        # Tiktoken encodings
+        - TIKTOKEN_ENCODINGS_BASE=/workspace/tiktoken_encodings
+
+      # vLLM server command with optimized settings
+      command: >
+        vllm serve openai/gpt-oss-20b
+          --host 0.0.0.0
+          --port 8000
+          --served-model-name gpt-oss-20b-32768
+          --quantization mxfp4
+          --mxfp4-backend CUTLASS
+          --mxfp4-layers moe,qkv,o,lm_head
+          --attention-backend FLASHINFER
+          --kv-cache-dtype fp8
+          --tensor-parallel-size 1
+          --max-model-len 32768
+          --max-num-seqs 256
+          --max-num-batched-tokens 32768
+          --enable-prefix-caching
+          --load-format fastsafetensors
+          --gpu_memory_utilization 0.7
+      # Health check
+      healthcheck:
+        test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+        interval: 30s
+        timeout: 10s
+        retries: 3
+        start_period: 300s
+
+  vllm-mxfp4-gpt-oss-20b-4096:
+      image: vllm-mxfp4-spark:latest
+      container_name: vllm-mxfp4-gpt-oss-20b-4096
+      restart: no
+      networks:
+          - llama-net
+      
+      # GPU access
+      deploy:
+        resources:
+          reservations:
+            devices:
+              - driver: nvidia
+                count: all
+                capabilities: [gpu]
+      
+      # Shared memory for CUDA IPC
+      ipc: host
+      
+      # Resource limits
+      ulimits:
+        memlock: -1
+        stack: 67108864
+      
+      # Persistent volumes
+      volumes:
+      # HuggingFace model cache (required)
+      - /home/cshore/.cache/huggingface:/root/.cache/huggingface
+      # FlashInfer JIT cache (speeds up startup after first run)
+      - /home/cshore/repo/spark-vllm-mxfp4-docker/.cache/flashinfer:/root/.cache/flashinfer
+      # vLLM cache
+      - /home/cshore/repo/spark-vllm-mxfp4-docker/.cache/vllm:/root/.cache/vllm
+      # Ccache for rebuilds
+      - /home/cshore/repo/spark-vllm-mxfp4-docker/.cache/ccache:/root/.ccache
+      
+      # Environment configuration
+      environment:
+        # FlashInfer settings
+        - FLASHINFER_LOGLEVEL=0
+        - FLASHINFER_JIT_VERBOSE=0
+        - FLASHINFER_NVCC_THREADS=4
+        - VLLM_NO_USAGE_STATS=1
+        - DO_NOT_TRACK=1
+        
+        # Tiktoken encodings
+        - TIKTOKEN_ENCODINGS_BASE=/workspace/tiktoken_encodings
+      
+      # vLLM server command with optimized settings
+      command: >
+        vllm serve openai/gpt-oss-20b
+          --host 0.0.0.0
+          --port 8000
+          --served-model-name gpt-oss-20b-4096
+          --quantization mxfp4
+          --mxfp4-backend CUTLASS
+          --mxfp4-layers moe,qkv,o,lm_head
+          --attention-backend FLASHINFER
+          --kv-cache-dtype fp8
+          --tensor-parallel-size 1
+          --max-model-len 4096
+          --max-num-seqs 512
+          --max-num-batched-tokens 32768
+          --enable-prefix-caching
+          --load-format fastsafetensors
+          --gpu_memory_utilization 0.4
+      # Health check
+      healthcheck:
+        test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+        interval: 30s
+        timeout: 10s
+        retries: 3
+        start_period: 300s
+
+  vllm-mxfp4-gpt-oss-20b-131072:
+      image: vllm-mxfp4-spark:latest
+      container_name: gpt-oss-20b-131072
+      restart: no
+      networks:
+          - llama-net
+      
+      # GPU access
+      deploy:
+        resources:
+          reservations:
+            devices:
+              - driver: nvidia
+                count: all
+                capabilities: [gpu]
+      
+      # Shared memory for CUDA IPC
+      ipc: host
+      
+      # Resource limits
+      ulimits:
+        memlock: -1
+        stack: 67108864
+      
+      # Persistent volumes
+      volumes:
+      # HuggingFace model cache (required)
+      - /home/cshore/.cache/huggingface:/root/.cache/huggingface
+      # FlashInfer JIT cache (speeds up startup after first run)
+      - /home/cshore/repo/spark-vllm-mxfp4-docker/.cache/flashinfer:/root/.cache/flashinfer
+      # vLLM cache
+      - /home/cshore/repo/spark-vllm-mxfp4-docker/.cache/vllm:/root/.cache/vllm
+      # Ccache for rebuilds
+      - /home/cshore/repo/spark-vllm-mxfp4-docker/.cache/ccache:/root/.ccache
+      
+      # Environment configuration
+      environment:
+        # FlashInfer settings
+        - FLASHINFER_LOGLEVEL=0
+        - FLASHINFER_JIT_VERBOSE=0
+        - FLASHINFER_NVCC_THREADS=4
+        - VLLM_NO_USAGE_STATS=1
+        - DO_NOT_TRACK=1
+        
+        # Tiktoken encodings
+        - TIKTOKEN_ENCODINGS_BASE=/workspace/tiktoken_encodings
+
+      # vLLM server command with optimized settings
+      command: >
+        vllm serve openai/gpt-oss-20b
+          --host 0.0.0.0
+          --port 8000
+          --served-model-name gpt-oss-20b-131072
+          --quantization mxfp4
+          --mxfp4-backend CUTLASS
+          --mxfp4-layers moe,qkv,o,lm_head
+          --attention-backend FLASHINFER
+          --kv-cache-dtype fp8
+          --tensor-parallel-size 1
+          --max-model-len 131072
+          --max-num-seqs 32
+          --max-num-batched-tokens 32768
+          --enable-prefix-caching
+          --load-format fastsafetensors
+          --gpu_memory_utilization 0.1
+      # Health check
+      healthcheck:
+        test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+        interval: 30s
+        timeout: 10s
+        retries: 3
+        start_period: 300s
+
+  nemotron-3:
+    image: scitrera/dgx-spark-vllm:0.14.1-t4
+    container_name: nemotron-3
+    restart: no
+    networks:
+        - llama-net
+    # GPU access
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+    # Shared memory for CUDA IPC
+    ipc: host
+    
+    # Resource limits
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    
+    # Persistent volumes
+    volumes:
+      # HuggingFace model cache (required)
+      - /home/cshore/.cache/huggingface:/root/.cache/huggingface
+      # FlashInfer JIT cache (speeds up startup after first run)
+      - /home/cshore/repo/spark-vllm-mxfp4-docker/.cache/flashinfer:/root/.cache/flashinfer
+      # vLLM cache
+      - /home/cshore/repo/spark-vllm-mxfp4-docker/.cache/vllm:/root/.cache/vllm
+      # Ccache for rebuilds
+      - /home/cshore/repo/spark-vllm-mxfp4-docker/.cache/ccache:/root/.ccache
+    
+    # Environment configuration
+    environment:
+      # FlashInfer settings
+      - FLASHINFER_LOGLEVEL=0
+      - FLASHINFER_JIT_VERBOSE=0
+      - FLASHINFER_NVCC_THREADS=4
+      - VLLM_NO_USAGE_STATS=1
+      - DO_NOT_TRACK=1
+      - VLLM_USE_FLASHINFER_MOE_FP4=1
+      - VLLM_FLASHINFER_MOE_BACKEND=throughput
+      
+      # Tiktoken encodings
+      - TIKTOKEN_ENCODINGS_BASE=/workspace/tiktoken_encodings
+
+    # vLLM server command with optimized settings
+    command: >
+      vllm serve nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-NVFP4
+        --host 0.0.0.0
+        --port 8000
+        --served-model-name nemotron-3
+        --kv-cache-dtype fp8
+        --tensor-parallel-size 1
+        --enable-prefix-caching
+        --load-format fastsafetensors
+        --gpu_memory_utilization 0.8
+        --trust_remote_code
+
+  glm-4.7-flash:
+    image: scitrera/dgx-spark-vllm:0.15.0-t5
+    container_name: glm-4.7-flash
+    restart: no
+    networks:
+        - llama-net
+    # GPU access
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+    # Shared memory for CUDA IPC
+    ipc: host
+    
+    # Resource limits
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    
+    # Persistent volumes
+    volumes:
+      # HuggingFace model cache (required)
+      - /home/cshore/.cache/huggingface:/root/.cache/huggingface
+      # FlashInfer JIT cache (speeds up startup after first run)
+      - /home/cshore/repo/spark-vllm-mxfp4-docker/.cache/flashinfer:/root/.cache/flashinfer
+      # vLLM cache
+      - /home/cshore/repo/spark-vllm-mxfp4-docker/.cache/vllm:/root/.cache/vllm
+      # Ccache for rebuilds
+      - /home/cshore/repo/spark-vllm-mxfp4-docker/.cache/ccache:/root/.ccache
+    
+    # Environment configuration
+    environment:
+      # FlashInfer settings
+      - FLASHINFER_LOGLEVEL=0
+      - FLASHINFER_JIT_VERBOSE=0
+      - FLASHINFER_NVCC_THREADS=4
+      - VLLM_NO_USAGE_STATS=1
+      - DO_NOT_TRACK=1
+      
+      # Tiktoken encodings
+      - TIKTOKEN_ENCODINGS_BASE=/workspace/tiktoken_encodings
+    
+    # vLLM server command with optimized settings
+    command: >
+      vllm serve zai-org/GLM-4.7-Flash
+        --host 0.0.0.0
+        --port 8000
+        --served-model-name glm-4.7-flash
+        --tensor-parallel-size 1
+        --enable-prefix-caching
+        --load-format fastsafetensors
+        --gpu_memory_utilization 0.8
+        --tool-call-parser glm47
+        --reasoning-parser glm45
+        --enable-auto-tool-choice
+        --max-num-batched-tokens 4096
+        --max-model-len 202752
+  
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 300s   
+
+  step-3.5-flash-int4:
+    container_name: llama-cpp-step-3.5-flash-int4
+    build:
+      dockerfile: Dockerfile.llamacppstep35
+    image: llama-cpp:arm64cudatstep35
+    runtime: nvidia
+    networks:
+      - llama-net
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      - GGML_CUDA_ENABLE_UNIFIED_MEMORY=1
+      - LLAMA_ARG_MMAP=0
+      - LLAMA_ARG_HOST=0.0.0.0
+      - LLAMA_ARG_WEBUI=0
+      - LLAMA_ARG_PORT=8000
+      - LLAMA_ARG_THREADS=8
+      - LLAMA_ARG_FLASH_ATTN=on
+      - LLAMA_ARG_N_GPU_LAYERS=all
+      - LLAMA_ARG_CTX_SIZE=131072
+      - LLAMA_ARG_BATCH_SIZE=66536
+      - LLAMA_ARG_UNDO_BATCH_SIZE=66536
+    command: ["--metrics", "-m", "/root/.cache/huggingface/hub/models--stepfun-ai--Step-3.5-Flash-Int4/snapshots/8f4ece312b61a4e73f99291a949bdf58dbb7ad1f/step3p5_flash_Q4_K_S.gguf","--temp","1.0"]
+    volumes:
+      -  /home/cshore/.cache/llama.cpp:/root/.cache/llama.cpp
+      # HuggingFace model cache (required)
+      - /home/cshore/.cache/huggingface:/root/.cache/huggingface
+      # FlashInfer JIT cache (speeds up startup after first run)
+      - /home/cshore/repo/spark-vllm-mxfp4-docker/.cache/flashinfer:/root/.cache/flashinfer
+      # vLLM cache
+      - /home/cshore/repo/spark-vllm-mxfp4-docker/.cache/vllm:/root/.cache/vllm
+      # Ccache for rebuilds
+      - /home/cshore/repo/spark-vllm-mxfp4-docker/.cache/ccache:/root/.ccache
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  qwen3-coder-next-fp8:
+    image: scitrera/dgx-spark-vllm:0.15.0-t5
+    container_name: qwen3-coder-next-fp8
+    restart: no
+    networks:
+        - llama-net
+    # GPU access
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+    # Shared memory for CUDA IPC
+    ipc: host
+    
+    # Resource limits
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    
+    # Persistent volumes
+    volumes:
+      # HuggingFace model cache (required)
+      - /home/cshore/.cache/huggingface:/root/.cache/huggingface
+      # FlashInfer JIT cache (speeds up startup after first run)
+      - /home/cshore/repo/spark-vllm-mxfp4-docker/.cache/flashinfer:/root/.cache/flashinfer
+      # vLLM cache
+      - /home/cshore/repo/spark-vllm-mxfp4-docker/.cache/vllm:/root/.cache/vllm
+      # Ccache for rebuilds
+      - /home/cshore/repo/spark-vllm-mxfp4-docker/.cache/ccache:/root/.ccache
+    
+    # Environment configuration
+    environment:
+      # FlashInfer settings
+      - FLASHINFER_LOGLEVEL=0
+      - FLASHINFER_JIT_VERBOSE=0
+      - FLASHINFER_NVCC_THREADS=4
+      - VLLM_NO_USAGE_STATS=1
+      - DO_NOT_TRACK=1
+      
+      # Tiktoken encodings
+      - TIKTOKEN_ENCODINGS_BASE=/workspace/tiktoken_encodings
+    
+    # vLLM server command with optimized settings
+    command: >
+      vllm serve Qwen/Qwen3-Coder-Next-FP8
+        --host 0.0.0.0
+        --port 8000
+        --served-model-name qwen3-coder-next-fp8
+        --tensor-parallel-size 1
+        --enable-prefix-caching
+        --load-format fastsafetensors
+        --gpu_memory_utilization 0.8
+        --tool-call-parser qwen3_coder
+        --enable-auto-tool-choice
+        --max-num-batched-tokens 4096
+        --max-model-len 202752
+  
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 300s
+
+  qwen3-coder-next-mxfp4:
+    container_name: qwen3-coder-next-mxfp4
+    build:
+      dockerfile: Dockerfile.llamacpp
+      context: .
+    image: llama-cpp:arm64cuda
+    runtime: nvidia
+    networks:
+      - llama-net
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      - GGML_CUDA_ENABLE_UNIFIED_MEMORY=1
+      - LLAMA_ARG_MMAP=0
+      - LLAMA_ARG_HOST=0.0.0.0
+      - LLAMA_ARG_WEBUI=0
+      - LLAMA_ARG_PORT=8000
+      - LLAMA_ARG_THREADS=20
+      - LLAMA_ARG_FLASH_ATTN=on
+      - LLAMA_ARG_N_GPU_LAYERS=all
+      - LLAMA_ARG_KV_UNIFIED
+    #  - LLAMA_ARG_CTX_SIZE=131072
+      - LLAMA_ARG_BATCH=66536
+      - LLAMA_ARG_UBATCH=66536
+    command: ["--metrics", "-m", "/root/.cache/huggingface/hub/models--unsloth--Qwen3-Coder-Next-GGUF/snapshots/37d32cdfb01580f72e8f73f35f8c18e7e40b28ae/Qwen3-Coder-Next-MXFP4_MOE.gguf","--temp","1.0"]
+    volumes:
+      -  /home/cshore/.cache/llama.cpp:/root/.cache/llama.cpp
+      # HuggingFace model cache (required)
+      - /home/cshore/.cache/huggingface:/root/.cache/huggingface
+      # FlashInfer JIT cache (speeds up startup after first run)
+      - /home/cshore/repo/spark-vllm-mxfp4-docker/.cache/flashinfer:/root/.cache/flashinfer
+      # vLLM cache
+      - /home/cshore/repo/spark-vllm-mxfp4-docker/.cache/vllm:/root/.cache/vllm
+      # Ccache for rebuilds
+      - /home/cshore/repo/spark-vllm-mxfp4-docker/.cache/ccache:/root/.ccache
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+networks:
+  llama-net:
+    external: true
+    name: llama-net

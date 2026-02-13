@@ -1,0 +1,123 @@
+healthCheckTimeout: 600
+
+logLevel: debug
+logToStdout: proxy
+macros:
+  vllm_up: 'docker compose -f /app/docker-compose.models.yml up --force-recreate'
+  vllm_down: 'docker compose -f /app/docker-compose.models.yml down'
+models:
+  qwen3-embedding-8b:
+    proxy: http://qwen3-embedding-8b:8000
+    cmd: ${vllm_up} qwen3-embedding-8b 
+    cmdStop: ${vllm_down} qwen3-embedding-8b 
+    ttl: 600
+    concurrencyLimit: 4096
+
+  qwen3-reranker-8b:
+    proxy: http://qwen3-reranker-8b:8000
+    cmd: ${vllm_up} qwen3-reranker-8b 
+    cmdStop: ${vllm_down} qwen3-reranker-8b 
+    ttl: 600
+    concurrencyLimit: 4096
+
+  qwen3-coder-next-fp8:
+    proxy: http://qwen3-coder-next-fp8:8000
+    cmd: ${vllm_up} qwen3-coder-next-fp8
+    cmdStop: ${vllm_down} qwen3-coder-next-fp8
+    ttl: 600
+    concurrencyLimit: 4096
+
+  gpt-oss-20b-4096:
+    proxy: http://gpt-oss-20b-4096:8000
+    cmd: ${vllm_up} vllm-mxfp4-gpt-oss-20b-4096
+    cmdStop: ${vllm_down}  vllm-mxfp4-gpt-oss-20b-4096
+    ttl: 600
+    concurrencyLimit: 4096
+
+  gpt-oss-20b-32768:
+    proxy: http://gpt-oss-20b-32768:8000
+    cmd: ${vllm_up} vllm-mxfp4-gpt-oss-20b-32768
+    cmdStop: ${vllm_down}  vllm-mxfp4-gpt-oss-20b-32768
+    ttl: 600
+    concurrencyLimit: 4096
+
+  gpt-oss-20b-131072:
+    proxy: http://gpt-oss-20b-131072:8000
+    cmd: ${vllm_up} vllm-mxfp4-gpt-oss-20b-131072
+    cmdStop: ${vllm_down}  vllm-mxfp4-gpt-oss-20b-131072
+    ttl: 600
+    concurrencyLimit: 4096
+
+  gpt-oss-120b-131072:
+    proxy: http://gpt-oss-120b-131072:8000
+    cmd: ${vllm_up} gpt-oss-120b-131072
+    cmdStop: ${vllm_down} gpt-oss-120b-131072
+    ttl: 600
+    concurrencyLimit: 4096
+
+  glm-4.7-flash:
+    proxy: http://glm-4.7-flash:8000
+    cmd: ${vllm_up} glm-4.7-flash
+    cmdStop: ${vllm_down} glm-4.7-flash
+    ttl: 600
+    concurrencyLimit: 4096
+
+  step-3.5-flash-int4:
+    proxy: http://step-3.5-flash-int4:8000
+    cmd: ${vllm_up} step-3.5-flash-int4
+    cmdStop: ${vllm_down} step-3.5-flash-int4
+    ttl: 600
+    concurrencyLimit: 4
+
+  qwen3-coder-next-mxfp4:
+    proxy: http://qwen3-coder-next-mxfp4:8000
+    cmd: ${vllm_up} qwen3-coder-next-mxfp4
+    cmdStop: ${vllm_down} qwen3-coder-next-mxfp4
+    ttl: 600
+    concurrencyLimit: 4096
+
+groups:
+  "rag-retrive":
+    swap: false
+    exclusive: true
+    members:
+    - qwen3-coder-next-mxfp4
+    - qwen3-embedding-8b
+    - gpt-oss-120b-131072
+    - qwen3-reranker-8b
+    
+  # swapper:
+  #   swap: true
+  #   exclusive: true
+  #   members:
+  #   - vllm-mxfp4-gpt-oss-20b-4096
+  #   - vllm-mxfp4-gpt-oss-20b-32768
+  #   - glm-4.7-flash
+  #   - gpt-oss-20b-131072
+  #   - step-3.5-flash-int4
+  #   - qwen3-embedding-8b
+  #   - gpt-oss-120b-131072
+
+
+#   forever:
+#     persistent: true
+#     swap: false
+#     exclusive: false
+#     members:
+#     - gpt-oss-20b-131072
+# hooks:
+#   on_startup:
+#     preload:
+#     - gpt-oss-20b-131072
+
+# groups:
+#   forever:
+#     persistent: true
+#     swap: false
+#     exclusive: false
+#     members:
+#     - gpt-oss-20b-MXFP4
+# hooks:
+#   on_startup:
+#     preload:
+#     - gpt-oss-20b-MXFP4

@@ -1,0 +1,97 @@
+global:
+  scrape_interval: 5s
+  scrape_timeout: 1s
+  evaluation_interval: 5s
+  metric_name_validation_scheme: utf8
+  scrape_native_histograms: false
+runtime:
+  gogc: 75
+alerting:
+  alertmanagers:
+  - follow_redirects: true
+    enable_http2: true
+    scheme: http
+    timeout: 10s
+    api_version: v2
+    static_configs:
+    - targets: []
+scrape_configs:
+- job_name: prometheus
+  honor_timestamps: true
+  track_timestamps_staleness: false
+  scrape_interval: 15s
+  scrape_timeout: 10s
+  scrape_protocols:
+  - OpenMetricsText1.0.0
+  - OpenMetricsText0.0.1
+  - PrometheusText1.0.0
+  - PrometheusText0.0.4
+  scrape_native_histograms: false
+  always_scrape_classic_histograms: false
+  convert_classic_histograms_to_nhcb: false
+  metrics_path: /metrics
+  scheme: http
+  enable_compression: true
+  metric_name_validation_scheme: utf8
+  metric_name_escaping_scheme: allow-utf-8
+  follow_redirects: true
+  enable_http2: true
+  static_configs:
+  - targets:
+    - localhost:9090
+    labels:
+      app: prometheus
+- job_name: vllm-mxfp4-gpt-oss-20b-4096
+  scrape_interval: 5s
+  scrape_timeout: 2s
+  static_configs:
+    - targets:
+        - 'vllm-mxfp4-gpt-oss-20b-4096:8000'
+- job_name: vllm-mxfp4-gpt-oss-20b-32768
+  scrape_interval: 5s
+  scrape_timeout: 2s
+  static_configs:
+    - targets:
+        - 'vllm-mxfp4-gpt-oss-20b-32768:8000'
+- job_name: qwen3-embedding-8b
+  scrape_interval: 5s
+  scrape_timeout: 2s
+  static_configs:
+    - targets:
+        - 'qwen3-embedding-8b:8000'
+- job_name: gpt-oss-120b-131072
+  scrape_interval: 5s
+  scrape_timeout: 2s
+  static_configs:
+    - targets:
+        - 'gpt-oss-120b-131072:8000'
+- job_name: gpt-oss-20b-131072
+  scrape_interval: 5s
+  scrape_timeout: 2s
+  static_configs:
+    - targets:
+        - 'gpt-oss-20b-131072:8000'
+- job_name: glm-4.7-flash
+  scrape_interval: 5s
+  scrape_timeout: 2s
+  static_configs:
+    - targets:
+        - 'glm-4.7-flash:8000'
+- job_name: step-3.5-flash-int4
+  scrape_interval: 5s
+  scrape_timeout: 2s
+  static_configs:
+    - targets:
+        - 'step-3.5-flash-int4:8080'
+- job_name: nvidia-smi-exporter
+  scrape_interval: 5s
+  scrape_timeout: 2s
+  static_configs:
+    - targets:
+        - 'nvidia-smi-exporter:9835'
+
+        
+otlp:
+  translation_strategy: UnderscoreEscapingWithSuffixes
+  label_name_underscore_sanitization: true
+  label_name_preserve_multiple_underscores: true

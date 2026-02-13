@@ -1,0 +1,108 @@
+##version for step3.5 llama.cpp patch
+
+# ---------- Global build args (pin versions here) ----------
+ARG LLAMA_CPP_TAG=b7938         # https://github.com/ggml-org/llama.cpp/releases
+ARG CMAKE_VERSION=4.2.2        # CMake version to install for ARM64 build
+
+ARG DEBIAN_VERSION=trixie
+
+ARG UBUNTU_VERSION=24.04
+# This needs to generally match the container host's environment.
+ARG CUDA_VERSION=13.1.1
+# Target the CUDA build image
+ARG BASE_CUDA_DEV_CONTAINER=nvidia/cuda:${CUDA_VERSION}-devel-ubuntu${UBUNTU_VERSION}
+
+ARG BASE_CUDA_RUN_CONTAINER=nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu${UBUNTU_VERSION}
+
+# ---------- Stage 1: build llama.cpp (CUDA) for ARM64 ----------
+FROM ${BASE_CUDA_DEV_CONTAINER} AS build
+
+# Re-declare args inside the stage where they’re used
+ARG LLAMA_CPP_TAG
+ARG CMAKE_VERSION
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git build-essential libssl-dev wget curl && \
+    rm -rf /var/lib/apt/lists/*
+
+# Default cmake with ubuntu is too old for this arch. Install a recent version.
+
+RUN wget "https://github.com/Kitware/CMake/releases/download/v$CMAKE_VERSION/cmake-$CMAKE_VERSION-linux-aarch64.sh" && \
+    sh "cmake-$CMAKE_VERSION-linux-aarch64.sh" --skip-license --prefix=/usr/local && \
+    rm "cmake-$CMAKE_VERSION-linux-aarch64.sh"
+
+# Find CUDA target dir on ARM (aarch64-linux or sbsa-linux) and add stub links for libcuda
+RUN set -eux; \
+  for d in /usr/local/cuda/targets/aarch64-linux /usr/local/cuda/targets/sbsa-linux; do \
+    if [ -d "$d/lib" ]; then CUDA_LIB_DIR="$d/lib"; break; fi; \
+  done; \
+  test -n "${CUDA_LIB_DIR:-}" || (echo "Could not find CUDA targets/*/lib" && exit 1); \
+  ln -sf "$CUDA_LIB_DIR/stubs/libcuda.so" "$CUDA_LIB_DIR/libcuda.so"; \
+  ln -sf "$CUDA_LIB_DIR/stubs/libcuda.so" "$CUDA_LIB_DIR/libcuda.so.1"
+
+# Clone llama.cpp at the pinned tag
+#RUN git clone --depth=1 --branch "${LLAMA_CPP_TAG}" https://github.com/ggml-org/llama.cpp /src/llama.cpp
+# RUN git clone --depth=1 https://github.com/stepfun-ai/Step-3.5-Flash.git /tmp/step35-patch \
+#   && mkdir /src && mv /tmp/step35-patch/llama.cpp /src/llama.cpp
+RUN git clone --depth=1 --branch autoparser-stepfun https://github.com/pwilkin/llama.cpp.git /src/llama.cpp
+WORKDIR /src/llama.cpp
+
+
+
+
+
+# Configure CUDA build; build the server; disable tests/examples
+RUN set -eux; \
+  for d in /usr/local/cuda/targets/aarch64-linux /usr/local/cuda/targets/sbsa-linux; do \
+    if [ -d "$d/lib" ]; then CUDA_LIB_DIR="$d/lib"; break; fi; \
+  done; \
+  cmake -S . -B build \
+    -DGGML_CUDA_GRAPHS=ON \
+    -DLLAMA_CURL=OFF \
+    -DLLAMA_BUILD_EXAMPLES=ON \
+    -DLLAMA_BUILD_COMMON=ON \
+    -DGGML_CUDA=ON \
+    -DLLAMA_CURL=OFF \
+    -DLLAMA_BUILD_SERVER=ON \
+    -DLLAMA_BUILD_TESTS=OFF \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_LIBRARY_PATH="${CUDA_LIB_DIR}/stubs" \
+    -DCMAKE_CUDA_ARCHITECTURES="121f" \
+    -DCMAKE_EXE_LINKER_FLAGS="-Wl,-rpath,${CUDA_LIB_DIR} -Wl,-rpath-link,${CUDA_LIB_DIR}/stubs" && \
+  cmake --build build -j 18
+
+# Export artifacts: server + all shared libs produced in build/bin
+RUN set -eux; \
+  mkdir -p /out/bin /out/lib; \
+  install -Dm755 build/bin/llama-server /out/bin/llama-server; \
+  find build/bin -maxdepth 1 -type f -name "*.so*" -exec install -Dm755 {} /out/lib/ \; ; \
+  ls -l /out/bin /out/lib
+
+# ---------- Stage 2: runtime with CUDA llama-server ----------
+FROM ${BASE_CUDA_RUN_CONTAINER} AS base
+
+# Add llama-server and its shared libs from the build stage
+COPY --from=build /out/bin/llama-server /usr/local/bin/llama-server
+COPY --from=build /out/lib/ /usr/local/lib/
+
+RUN apt-get update \
+    && apt-get -y --no-install-recommends full-upgrade \
+    && apt-get install -y --no-install-recommends libgomp1 curl\
+    && apt autoremove -y \
+    && apt clean -y \
+    && rm -rf /tmp/* /var/tmp/* \
+    && find /var/cache/apt/archives /var/lib/apt/lists -not -name lock -type f -delete \
+    && find /var/cache -type f -delete
+
+# Ensure the loader can find both our libs and CUDA's libs
+RUN echo "/usr/local/lib" > /etc/ld.so.conf.d/llama.conf && ldconfig
+ENV LD_LIBRARY_PATH=/usr/local/lib:/usr/local/cuda/lib64:$LD_LIBRARY_PATH
+
+# NVIDIA runtime (host mounts real libcuda at run-time)
+ENV NVIDIA_VISIBLE_DEVICES=all \
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility
+
+WORKDIR /app
+EXPOSE 8080
+
+ENTRYPOINT ["llama-server"]
