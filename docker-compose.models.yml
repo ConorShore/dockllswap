@@ -1,116 +1,454 @@
-services:
-  # jenkins_main:
-  #   image: jenkins/jenkins:lts
-  #   ports:
-  #   - 8007:8080
-  #   - 50000:50000
-  #   container_name: jenkins
-  #   networks:
-  #     - llama-net
-  #   volumes:
-  #     - ./jenkins_data:/var/jenkins_home
+# =============================================================================
+# Docker Compose for GPT-OSS-120B with MXFP4 on DGX Spark (SM121/GB10)
+# =============================================================================
+#
+# Achieves 59.4 tok/s decode with CUTLASS MXFP4 kernel.
+#
+# Usage:
+#   docker compose build                 # Build the image
+#   docker compose up -d                 # Start the service
+#   docker compose logs -f               # View logs
+#   docker compose down                  # Stop the service
+#
+# Benchmark:
+#   docker compose exec vllm-mxfp4 llama-benchy \
+#       --base-url http://localhost:8000/v1 \
+#       --model gpt-oss-120b \
+#       --tokenizer openai/gpt-oss-120b \
+#       --pp 2048 --tg 32 128
+#
+# =============================================================================
 
-  gitlab:
-    image: gitlab/gitlab-ce:latest
-    container_name: gitlab
-    restart: unless-stopped
-    hostname: spark0.conornet.co
-    networks:
-        - llama-net
-        - gitlab-net
-    environment:
-      GITLAB_OMNIBUS_CONFIG: |
-        # External URL configuration
-        external_url 'http://spark0.conornet.co:8005'
-        
-        # Basic security settings
-        gitlab_rails['time_zone'] = 'UTC'
-        gitlab_rails['backup_keep_time'] = 604800  # 7 days
-    ports:
-      - "8005:8005"
-      - "443:443"
-    volumes:
-      - ./gitlab/gitlab_config:/etc/gitlab
-      - ./gitlab/gitlab_logs:/var/log/gitlab
-      - ./gitlab/gitlab_data:/var/opt/gitlab
-      # Optional: Mount custom SSL certificates (see notes below)
-      # - ./ssl:/etc/gitlab/ssl:ro
-      # root
-      # MyNewSecurePassword123!
+x-defaultvol: &defaultvol
+  ${HF_LOC}:/root/.cache/huggingface
 
-    # Optional: Add healthcheck
+x-llamacppvol: &llamacppvol
+  volumes: 
+    - *defaultvol
+    - ${LLAMACPP_LOC}:/root/.cache/llama.cpp
+
+x-vllmvol: &vllmvol
+  volumes:
+    - *defaultvol
+    # FlashInfer JIT cache (speeds up startup after first run)
+    - ./.cache/flashinfer:/root/.cache/flashinfer
+    # vLLM cache
+    - ./.cache/vllm:/root/.cache/vllm
+    # Ccache for rebuilds
+    - ./.cache/ccache:/root/.ccache
+
+x-llamacppdefenv: &llamacppdefenv
+  - NVIDIA_VISIBLE_DEVICES=all
+  - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+  - GGML_CUDA_ENABLE_UNIFIED_MEMORY=1
+  - LLAMA_ARG_MMAP=0
+  - LLAMA_ARG_HOST=0.0.0.0
+  - LLAMA_ARG_WEBUI=0
+  - LLAMA_ARG_PORT=8000
+  - LLAMA_ARG_THREADS=20
+  - LLAMA_ARG_FLASH_ATTN=on
+  - LLAMA_ARG_N_GPU_LAYERS=all
+
+x-defaultconfig: &defaultconfig
+  restart: no
+  networks:
+    - llama-net
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: all
+            capabilities: [gpu]
+  ipc: host
+  ulimits:
+    memlock: -1
+    stack: 67108864
+
+x-llamacppdefaultimage: &llamacppdefaultimage
+    build:
+      dockerfile: Dockerfile.llamacpp
+      context: .
+    image: llama-cpp:arm64cuda
+
+x-llamacppstep35image: &llamacppstep35image
+    build:
+      dockerfile: Dockerfile.llamacppstep35
+      context: .
+    image: llama-cpp:arm64cudatstep35
+
+x-vllm0141t4image: &vllm0141t4image
+    image: scitrera/dgx-spark-vllm:0.14.1-t4
+
+x-vllmdefaultimage: &vllmdefaultimage
+    image: scitrera/dgx-spark-vllm:0.16.0-t5
+
+x-vllmmxfp4image: &vllmmxfp4image
+    build:
+      context: .
+      dockerfile: Dockerfile.vllm
+      args:
+        BUILD_JOBS: 16
+    image: vllm-mxfp4-spark:latest
+
+x-healthcheck: &healthcheck
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost/-/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 300s
 
-  gitlab-runner:
-    image: gitlab/gitlab-runner:alpine
-    networks:
-        - gitlab-net
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - ./gitlab/runner_config:/etc/gitlab-runner:ro
-
-  postgres:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    networks:
-        - llama-net
+services:
+  qwen3-embedding-8b:
+    <<: [*vllmmxfp4image, *defaultconfig, *vllmvol, *healthcheck]
+    container_name: vllm-qwen3-embedding-8b
+    # Environment configuration
     environment:
-      POSTGRES_USER: n8n
-      POSTGRES_PASSWORD: n8n
-      POSTGRES_DB: n8n
-    volumes:
-      - ./postgres_data:/var/lib/postgresql/data
+      # FlashInfer settings
+      - FLASHINFER_LOGLEVEL=0
+      - FLASHINFER_JIT_VERBOSE=0
+      - FLASHINFER_NVCC_THREADS=4
+      - VLLM_NO_USAGE_STATS=1
+      - DO_NOT_TRACK=1
+    
+      # Tiktoken encodings
+      - TIKTOKEN_ENCODINGS_BASE=/workspace/tiktoken_encodings
 
-  n8n:
-    image: n8nio/n8n:latest
-    restart: unless-stopped
-    networks:
-        - llama-net
-    depends_on:
-      - postgres
-    ports:
-      - "5678:5678"
+    # vLLM server command with optimized settings
+    command: >
+      vllm serve qwen/qwen3-embedding-8b
+        --host 0.0.0.0
+        --port 8000
+        --served-model-name qwen3-embedding-8b
+        --kv-cache-dtype fp8
+        --tensor-parallel-size 1
+        --enable-prefix-caching
+        --load-format fastsafetensors
+        --gpu_memory_utilization 0.15
+        --enable-prompt-embeds
+        --max-model-len 4096
+        --max-num-seqs 256
+
+  qwen3-reranker-8b:
+    <<: [*vllmmxfp4image, *defaultconfig, *vllmvol, *healthcheck]
+    container_name: vllm-qwen3-reranker-8b
+    # Environment configuration
     environment:
-      DB_TYPE: postgresdb
-      DB_POSTGRESDB_HOST: postgres
-      DB_POSTGRESDB_PORT: "5432"
-      DB_POSTGRESDB_DATABASE: n8n
-      DB_POSTGRESDB_USER: n8n
-      DB_POSTGRESDB_PASSWORD: n8n
-      N8N_PORT: "5678"
-      N8N_PROTOCOL: http
-      N8N_HOST: 127.0.0.1
-      N8N_SECURE_COOKIE: false
-      N8N_RESTRICT_FILE_ACCESS_TO: /home/node/n8n_files
-      WEBHOOK_URL: http://127.0.0.1:5678/
-      GENERIC_TIMEZONE: UTC
-      NODE_OPTIONS: "--max-old-space-size=4096"
+      # FlashInfer settings
+      - FLASHINFER_LOGLEVEL=0
+      - FLASHINFER_JIT_VERBOSE=0
+      - FLASHINFER_NVCC_THREADS=4
+      - VLLM_NO_USAGE_STATS=1
+      - DO_NOT_TRACK=1
+      
+      
+      # Tiktoken encodings
+      - TIKTOKEN_ENCODINGS_BASE=/workspace/tiktoken_encodings
 
-      TZ: UTC
-    volumes:
-      - ./n8n_data:/home/node/.n8n
-      - ./n8n_files:/home/node/n8n_files
+    # vLLM server command with optimized settings
+    command: >
+      vllm serve qwen/qwen3-reranker-8b
+        --host 0.0.0.0
+        --port 8000
+        --served-model-name qwen3-reranker-8b
+        --kv-cache-dtype fp8
+        --tensor-parallel-size 1
+        --enable-prefix-caching
+        --load-format fastsafetensors
+        --gpu_memory_utilization 0.4
+        --max-model-len 4096
+        --max-num-seqs 256
 
-  qdrant:
-    image: qdrant/qdrant:latest
-    restart: always
-    container_name: qdrant
-    networks:
-      - llama-net
+  gpt-oss-120b-131072:
+    <<: [*vllmmxfp4image, *defaultconfig, *vllmvol, *healthcheck]
+    container_name: gpt-oss-120b-131072
+    
+    # Environment configuration
     environment:
-      QDRANT__GPU__INDEXING: 1
-    ports:
-      - 6333:6333
-      - 6334:6334
-    configs:
-      - source: qdrant_config
-        target: /qdrant/config/production.yaml
-    volumes:
-      - ./qdrant_data:/qdrant/storage
+      # FlashInfer settings
+      - FLASHINFER_LOGLEVEL=0
+      - FLASHINFER_JIT_VERBOSE=0
+      - FLASHINFER_NVCC_THREADS=4
+      - VLLM_NO_USAGE_STATS=1
+      - DO_NOT_TRACK=1
+      
+      # Tiktoken encodings
+      - TIKTOKEN_ENCODINGS_BASE=/workspace/tiktoken_encodings
+    
+    # vLLM server command with optimized settings
+    command: >
+      vllm serve openai/gpt-oss-120b
+        --host 0.0.0.0
+        --port 8000
+        --served-model-name gpt-oss-120b-131072
+        --quantization mxfp4
+        --mxfp4-backend CUTLASS
+        --mxfp4-layers moe,qkv,o,lm_head
+        --attention-backend FLASHINFER
+        --kv-cache-dtype fp8
+        --tensor-parallel-size 1
+        --max-model-len 131072
+        --max-num-seqs 3
+        --max-num-batched-tokens 65536
+        --enable-prefix-caching
+        --load-format fastsafetensors
+        --gpu_memory_utilization 0.7
+        --tool-call-parser openai
+        --enable-auto-tool-choice
+
+  vllm-mxfp4-gpt-oss-20b-32768:
+    <<: [*vllmmxfp4image, *defaultconfig, *vllmvol, *healthcheck]
+    container_name: vllm-mxfp4-gpt-oss-20b-32768
+    
+    # Environment configuration
+    environment:
+      # FlashInfer settings
+      - FLASHINFER_LOGLEVEL=0
+      - FLASHINFER_JIT_VERBOSE=0
+      - FLASHINFER_NVCC_THREADS=4
+      - VLLM_NO_USAGE_STATS=1
+      - DO_NOT_TRACK=1
+      
+      # Tiktoken encodings
+      - TIKTOKEN_ENCODINGS_BASE=/workspace/tiktoken_encodings
+
+    # vLLM server command with optimized settings
+    command: >
+      vllm serve openai/gpt-oss-20b
+        --host 0.0.0.0
+        --port 8000
+        --served-model-name gpt-oss-20b-32768
+        --quantization mxfp4
+        --mxfp4-backend CUTLASS
+        --mxfp4-layers moe,qkv,o,lm_head
+        --attention-backend FLASHINFER
+        --kv-cache-dtype fp8
+        --tensor-parallel-size 1
+        --max-model-len 32768
+        --max-num-seqs 256
+        --max-num-batched-tokens 32768
+        --enable-prefix-caching
+        --load-format fastsafetensors
+        --gpu_memory_utilization 0.7
+
+  vllm-mxfp4-gpt-oss-20b-4096:
+    <<: [*vllmmxfp4image, *defaultconfig, *vllmvol, *healthcheck]
+    container_name: vllm-mxfp4-gpt-oss-20b-4096
+    # Environment configuration
+    environment:
+      # FlashInfer settings
+      - FLASHINFER_LOGLEVEL=0
+      - FLASHINFER_JIT_VERBOSE=0
+      - FLASHINFER_NVCC_THREADS=4
+      - VLLM_NO_USAGE_STATS=1
+      - DO_NOT_TRACK=1
+      
+      # Tiktoken encodings
+      - TIKTOKEN_ENCODINGS_BASE=/workspace/tiktoken_encodings
+    
+    # vLLM server command with optimized settings
+    command: >
+      vllm serve openai/gpt-oss-20b
+        --host 0.0.0.0
+        --port 8000
+        --served-model-name gpt-oss-20b-4096
+        --quantization mxfp4
+        --mxfp4-backend CUTLASS
+        --mxfp4-layers moe,qkv,o,lm_head
+        --attention-backend FLASHINFER
+        --kv-cache-dtype fp8
+        --tensor-parallel-size 1
+        --max-model-len 4096
+        --max-num-seqs 512
+        --max-num-batched-tokens 32768
+        --enable-prefix-caching
+        --load-format fastsafetensors
+        --gpu_memory_utilization 0.4
+
+  vllm-mxfp4-gpt-oss-20b-131072:
+    <<: [*vllmmxfp4image, *defaultconfig, *vllmvol, *healthcheck]
+    container_name: gpt-oss-20b-131072
+    # Environment configuration
+    environment:
+      # FlashInfer settings
+      - FLASHINFER_LOGLEVEL=0
+      - FLASHINFER_JIT_VERBOSE=0
+      - FLASHINFER_NVCC_THREADS=4
+      - VLLM_NO_USAGE_STATS=1
+      - DO_NOT_TRACK=1
+      
+      # Tiktoken encodings
+      - TIKTOKEN_ENCODINGS_BASE=/workspace/tiktoken_encodings
+
+    # vLLM server command with optimized settings
+    command: >
+      vllm serve openai/gpt-oss-20b
+        --host 0.0.0.0
+        --port 8000
+        --served-model-name gpt-oss-20b-131072
+        --quantization mxfp4
+        --mxfp4-backend CUTLASS
+        --mxfp4-layers moe,qkv,o,lm_head
+        --attention-backend FLASHINFER
+        --kv-cache-dtype fp8
+        --tensor-parallel-size 1
+        --max-model-len 131072
+        --max-num-seqs 32
+        --max-num-batched-tokens 32768
+        --enable-prefix-caching
+        --load-format fastsafetensors
+        --gpu_memory_utilization 0.1
+
+  nemotron-3:
+    <<: [*vllm0141t4image, *defaultconfig, *vllmvol, *healthcheck]
+    container_name: nemotron-3
+    # Environment configuration
+    environment:
+      # FlashInfer settings
+      - FLASHINFER_LOGLEVEL=0
+      - FLASHINFER_JIT_VERBOSE=0
+      - FLASHINFER_NVCC_THREADS=4
+      - VLLM_NO_USAGE_STATS=1
+      - DO_NOT_TRACK=1
+      - VLLM_USE_FLASHINFER_MOE_FP4=1
+      - VLLM_FLASHINFER_MOE_BACKEND=throughput
+      
+      # Tiktoken encodings
+      - TIKTOKEN_ENCODINGS_BASE=/workspace/tiktoken_encodings
+
+    # vLLM server command with optimized settings
+    command: >
+      vllm serve nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-NVFP4
+        --host 0.0.0.0
+        --port 8000
+        --served-model-name nemotron-3
+        --kv-cache-dtype fp8
+        --tensor-parallel-size 1
+        --enable-prefix-caching
+        --load-format fastsafetensors
+        --gpu_memory_utilization 0.8
+        --trust_remote_code
+
+  glm-4.7-flash:
+    <<: [*vllmdefaultimage, *defaultconfig, *vllmvol, *healthcheck]
+    container_name: glm-4.7-flash
+    
+    # Environment configuration
+    environment:
+      # FlashInfer settings
+      - FLASHINFER_LOGLEVEL=0
+      - FLASHINFER_JIT_VERBOSE=0
+      - FLASHINFER_NVCC_THREADS=4
+      - VLLM_NO_USAGE_STATS=1
+      - DO_NOT_TRACK=1
+      
+      # Tiktoken encodings
+      - TIKTOKEN_ENCODINGS_BASE=/workspace/tiktoken_encodings
+    
+    # vLLM server command with optimized settings
+    command: >
+      vllm serve zai-org/GLM-4.7-Flash
+        --host 0.0.0.0
+        --port 8000
+        --served-model-name glm-4.7-flash
+        --tensor-parallel-size 1
+        --enable-prefix-caching
+        --load-format fastsafetensors
+        --gpu_memory_utilization 0.8
+        --tool-call-parser glm47
+        --reasoning-parser glm45
+        --enable-auto-tool-choice
+        --max-num-batched-tokens 4096
+        --max-model-len 202752 
+
+  step-3.5-flash-int4:
+    <<: [*llamacppstep35image, *defaultconfig, *llamacppvol, *healthcheck]
+    container_name: llama-cpp-step-3.5-flash-int4
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      - GGML_CUDA_ENABLE_UNIFIED_MEMORY=1
+      - LLAMA_ARG_MMAP=0
+      - LLAMA_ARG_HOST=0.0.0.0
+      - LLAMA_ARG_WEBUI=0
+      - LLAMA_ARG_PORT=8000
+      - LLAMA_ARG_THREADS=8
+      - LLAMA_ARG_FLASH_ATTN=on
+      - LLAMA_ARG_N_GPU_LAYERS=all
+      - LLAMA_ARG_CTX_SIZE=131072
+      - LLAMA_ARG_BATCH=66536
+      - LLAMA_ARG_UBATCH=66536
+    command: ["--metrics", "-m", "/root/.cache/huggingface/hub/models--stepfun-ai--Step-3.5-Flash-Int4/snapshots/8f4ece312b61a4e73f99291a949bdf58dbb7ad1f/step3p5_flash_Q4_K_S.gguf","--temp","1.0"]
+
+  qwen3-coder-next-fp8:
+    <<: [*vllmdefaultimage, *defaultconfig, *vllmvol, *healthcheck]
+    container_name: qwen3-coder-next-fp8
+    
+    # Environment configuration
+    environment:
+      # FlashInfer settings
+      - FLASHINFER_LOGLEVEL=0
+      - FLASHINFER_JIT_VERBOSE=0
+      - FLASHINFER_NVCC_THREADS=4
+      - VLLM_NO_USAGE_STATS=1
+      - DO_NOT_TRACK=1
+      
+      # Tiktoken encodings
+      - TIKTOKEN_ENCODINGS_BASE=/workspace/tiktoken_encodings
+    
+    # vLLM server command with optimized settings
+    command: >
+      vllm serve Qwen/Qwen3-Coder-Next-FP8
+        --host 0.0.0.0
+        --port 8000
+        --served-model-name qwen3-coder-next-fp8
+        --tensor-parallel-size 1
+        --enable-prefix-caching
+        --load-format fastsafetensors
+        --gpu_memory_utilization 0.8
+        --tool-call-parser qwen3_coder
+        --enable-auto-tool-choice
+        --max-num-batched-tokens 4096
+        --max-model-len 202752
+
+  qwen3-coder-next-mxfp4:
+    <<: [*llamacppdefaultimage, *defaultconfig, *llamacppvol, *healthcheck]
+    container_name: qwen3-coder-next-mxfp4
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      - GGML_CUDA_ENABLE_UNIFIED_MEMORY=1
+      - LLAMA_ARG_MMAP=0
+      - LLAMA_ARG_HOST=0.0.0.0
+      - LLAMA_ARG_WEBUI=0
+      - LLAMA_ARG_PORT=8000
+      - LLAMA_ARG_THREADS=20
+      - LLAMA_ARG_FLASH_ATTN=on
+      - LLAMA_ARG_N_GPU_LAYERS=all
+      - LLAMA_ARG_BATCH=4096
+      - LLAMA_ARG_UBATCH=4096
+    command: ["--metrics", "-m", "/root/.cache/huggingface/hub/models--unsloth--Qwen3-Coder-Next-GGUF/snapshots/37d32cdfb01580f72e8f73f35f8c18e7e40b28ae/Qwen3-Coder-Next-MXFP4_MOE.gguf","--temp","1.0"]
+
+  minimax-m2.5-gguf-q3:
+    <<: [*llamacppdefaultimage, *defaultconfig, *llamacppvol, *healthcheck]
+    container_name: minimax-m2.5-gguf-q3
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      - GGML_CUDA_ENABLE_UNIFIED_MEMORY=1
+      - LLAMA_ARG_MMAP=0
+      - LLAMA_ARG_HOST=0.0.0.0
+      - LLAMA_ARG_WEBUI=0
+      - LLAMA_ARG_PORT=8000
+      - LLAMA_ARG_THREADS=20
+      - LLAMA_ARG_FLASH_ATTN=on
+      - LLAMA_ARG_N_GPU_LAYERS=all
+    #  - LLAMA_ARG_CTX_SIZE=131072
+    #  - LLAMA_ARG_BATCH=4096
+    #  - LLAMA_ARG_UBATCH=4096
+    command: ["--metrics", "-m", "/root/.cache/huggingface/hub/models--ox-ox--MiniMax-M2.5-GGUF/snapshots/076c3e199a449df2ec01b6d52a762ee56fb9d702/minimax-m2.5-Q3_K_L.gguf"]
+          
 
 networks:
   llama-net:

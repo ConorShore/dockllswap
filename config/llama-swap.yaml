@@ -3,8 +3,8 @@ healthCheckTimeout: 600
 logLevel: debug
 logToStdout: proxy
 macros:
-  model_up: 'docker compose -f /app/docker-compose.models.yml up --force-recreate'
-  model_down: 'docker compose -f /app/docker-compose.models.yml down'
+  model_up: 'docker compose --env-file /app/docker-compose.models.env -f /app/docker-compose.models.yml up --force-recreate'
+  model_down: 'docker compose --env-file /app/docker-compose.models.env -f /app/docker-compose.models.yml down'
 models:
   qwen3-embedding-8b:
     proxy: http://qwen3-embedding-8b:8000
@@ -73,6 +73,13 @@ models:
     proxy: http://qwen3-coder-next-mxfp4:8000
     cmd: ${model_up} qwen3-coder-next-mxfp4
     cmdStop: ${model_down} qwen3-coder-next-mxfp4
+    ttl: 600
+    concurrencyLimit: 4096
+
+  minimax-m2.5-gguf-q3:
+    proxy: http://minimax-m2.5-gguf-q3:8000
+    cmd: ${model_up} minimax-m2.5-gguf-q3
+    cmdStop: ${model_down} minimax-m2.5-gguf-q3
     ttl: 600
     concurrencyLimit: 4096
 

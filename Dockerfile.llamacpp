@@ -39,7 +39,8 @@ RUN set -eux; \
   ln -sf "$CUDA_LIB_DIR/stubs/libcuda.so" "$CUDA_LIB_DIR/libcuda.so.1"
 
 # Clone llama.cpp at the pinned tag
-RUN git clone --depth=1 --branch "${LLAMA_CPP_TAG}" https://github.com/ggml-org/llama.cpp /src/llama.cpp
+#RUN git clone --depth=1 --branch "${LLAMA_CPP_TAG}" https://github.com/ggml-org/llama.cpp /src/llama.cpp
+RUN git clone --depth=1 --branch master https://github.com/ggml-org/llama.cpp /src/llama.cpp
 WORKDIR /src/llama.cpp
 
 # Configure CUDA build; build the server; disable tests/examples

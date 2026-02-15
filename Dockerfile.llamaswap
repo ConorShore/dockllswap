@@ -51,4 +51,4 @@ WORKDIR /app
 EXPOSE 8080
 
 # llama-swap reads /app/config.yaml (mount it there via Compose)
-ENTRYPOINT ["llama-swap", "--config", "/app/config.yaml", "--listen", "0.0.0.0:8080", "-watch-config"]
+ENTRYPOINT ["llama-swap", "--config", "/app/config.yaml", "--listen", "0.0.0.0:8000", "-watch-config"]
