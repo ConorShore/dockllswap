@@ -30,9 +30,9 @@ services:
       - "8005:8005"
       - "443:443"
     volumes:
-      - ./gitlab/gitlab_config:/etc/gitlab
-      - ./gitlab/gitlab_logs:/var/log/gitlab
-      - ./gitlab/gitlab_data:/var/opt/gitlab
+      - ./config/gitlab:/etc/gitlab
+      - ./volumes/gitlab/logs:/var/log/gitlab
+      - ./volumes/gitlab/data:/var/opt/gitlab
       # Optional: Mount custom SSL certificates (see notes below)
       # - ./ssl:/etc/gitlab/ssl:ro
       # root
@@ -51,7 +51,7 @@ services:
         - gitlab-net
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ./gitlab/runner_config:/etc/gitlab-runner:ro
+      - ./config/gitlab_runner:/etc/gitlab-runner:ro
 
   postgres:
     image: postgres:16-alpine
@@ -63,7 +63,7 @@ services:
       POSTGRES_PASSWORD: n8n
       POSTGRES_DB: n8n
     volumes:
-      - ./postgres_data:/var/lib/postgresql/data
+      - ./volumes/postgres/data:/var/lib/postgresql/data
 
   n8n:
     image: n8nio/n8n:latest
@@ -92,8 +92,8 @@ services:
 
       TZ: UTC
     volumes:
-      - ./n8n_data:/home/node/.n8n
-      - ./n8n_files:/home/node/n8n_files
+      - ./volumes/n8n/data:/home/node/.n8n
+      - ./volumes/n8n/files:/home/node/n8n_files
 
   qdrant:
     image: qdrant/qdrant:latest
@@ -110,7 +110,7 @@ services:
       - source: qdrant_config
         target: /qdrant/config/production.yaml
     volumes:
-      - ./qdrant_data:/qdrant/storage
+      - ./volumes/qdrant/data:/qdrant/storage
 
 networks:
   llama-net:

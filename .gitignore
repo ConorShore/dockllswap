@@ -48,12 +48,5 @@ Thumbs.db
 
 # Docker mounts
 .cache
-grafana-data
-loki_data
-n8n_data
-n8n_files
-postgres_data
-prometheus_data
-qdrant_data
-gitlab
-jenkins_data
+volumes
+config/gitlab

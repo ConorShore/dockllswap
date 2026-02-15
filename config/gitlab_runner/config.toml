@@ -1,0 +1,17 @@
+concurrent = 1
+check_interval = 0
+
+[session_server]
+  session_timeout = 1800
+
+[[runners]]
+  name = "docker-runner"
+  url = "http://gitlab:8005/"
+  token = "glrt-Hp4pA0PZnq1bKX19osjz4G86MQp0OjEKdToxCw.01.1203urcjq"
+  executor = "docker"
+  [runners.docker]
+    image = "alpine:latest"
+    privileged = false
+    disable_cache = false
+    volumes = ["/cache"]
+    shm_size = 0

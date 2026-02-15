@@ -10,8 +10,8 @@ services:
     ports:
       - "8008:3100"
     volumes:
-      - ./loki_data/wal:/wal:rw
-      - ./loki_data/data:/loki:rw
+      - ./volumes/loki/wal:/wal:rw
+      - ./volumes/loki/data:/loki:rw
       - ./config/loki.yml:/etc/loki/loki-config.yml:ro
 
   grafana:
@@ -29,7 +29,7 @@ services:
       - GF_SERVER_ROOT_URL=http://localhost:3000
 
     volumes:
-      - ./grafana-data:/var/lib/grafana:rw
+      - ./volumes/grafana/data:/var/lib/grafana:rw
 
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
@@ -52,7 +52,7 @@ services:
       - "8009:9090"                     # Grafana UI & Prometheus UI (both reachable)
     volumes:
       - ./config/prometheus.yml:/prometheus/prometheus.yml:ro   # Prometheus config
-      - ./prometheus_data:/prometheus:rw   # Prometheus DB, alert rules, etc.
+      - ./volumes/prometheus/data:/prometheus:rw   # Prometheus DB, alert rules, etc.
   nvidia-smi-exporter:
     image: utkuozdemir/nvidia_gpu_exporter:1.3.1
     container_name: nvidia-smi-exporter
