@@ -197,9 +197,9 @@ services:
         --tool-call-parser openai
         --enable-auto-tool-choice
 
-  vllm-mxfp4-gpt-oss-20b-32768:
+  gpt-oss-20b-32768:
     <<: [*vllmmxfp4image, *defaultconfig, *vllmvol, *healthcheck]
-    container_name: vllm-mxfp4-gpt-oss-20b-32768
+    container_name: gpt-oss-20b-32768
     
     # Environment configuration
     environment:
@@ -232,9 +232,9 @@ services:
         --load-format fastsafetensors
         --gpu_memory_utilization 0.7
 
-  vllm-mxfp4-gpt-oss-20b-4096:
+  gpt-oss-20b-4096:
     <<: [*vllmmxfp4image, *defaultconfig, *vllmvol, *healthcheck]
-    container_name: vllm-mxfp4-gpt-oss-20b-4096
+    container_name: gpt-oss-20b-4096
     # Environment configuration
     environment:
       # FlashInfer settings
@@ -266,7 +266,7 @@ services:
         --load-format fastsafetensors
         --gpu_memory_utilization 0.4
 
-  vllm-mxfp4-gpt-oss-20b-131072:
+  gpt-oss-20b-131072:
     <<: [*vllmmxfp4image, *defaultconfig, *vllmvol, *healthcheck]
     container_name: gpt-oss-20b-131072
     # Environment configuration
@@ -364,7 +364,7 @@ services:
 
   step-3.5-flash-int4:
     <<: [*llamacppstep35image, *defaultconfig, *llamacppvol, *healthcheck]
-    container_name: llama-cpp-step-3.5-flash-int4
+    container_name: step-3.5-flash-int4
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
@@ -454,8 +454,6 @@ networks:
   llama-net:
     external: true
     name: llama-net
-  gitlab-net:
-    name: gitlab-net
 
 
 configs:

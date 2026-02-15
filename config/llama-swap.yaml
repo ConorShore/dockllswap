@@ -29,22 +29,22 @@ models:
 
   gpt-oss-20b-4096:
     proxy: http://gpt-oss-20b-4096:8000
-    cmd: ${model_up} vllm-mxfp4-gpt-oss-20b-4096
-    cmdStop: ${model_down}  vllm-mxfp4-gpt-oss-20b-4096
+    cmd: ${model_up} gpt-oss-20b-4096
+    cmdStop: ${model_down}  gpt-oss-20b-4096
     ttl: 600
     concurrencyLimit: 4096
 
   gpt-oss-20b-32768:
     proxy: http://gpt-oss-20b-32768:8000
-    cmd: ${model_up} vllm-mxfp4-gpt-oss-20b-32768
-    cmdStop: ${model_down}  vllm-mxfp4-gpt-oss-20b-32768
+    cmd: ${model_up} gpt-oss-20b-32768
+    cmdStop: ${model_down}  gpt-oss-20b-32768
     ttl: 600
     concurrencyLimit: 4096
 
   gpt-oss-20b-131072:
     proxy: http://gpt-oss-20b-131072:8000
-    cmd: ${model_up} vllm-mxfp4-gpt-oss-20b-131072
-    cmdStop: ${model_down}  vllm-mxfp4-gpt-oss-20b-131072
+    cmd: ${model_up} gpt-oss-20b-131072
+    cmdStop: ${model_down}  gpt-oss-20b-131072
     ttl: 600
     concurrencyLimit: 4096
 
