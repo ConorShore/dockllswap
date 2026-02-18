@@ -48,11 +48,12 @@ services:
       vllm serve qwen/qwen3-embedding-8b
         --host 0.0.0.0
         --port 8000
-        --served-model-name qwen3-embedding-8b
-        --kv-cache-dtype fp8
+        --served-model-name
+        qwen3-embedding-8b
         --tensor-parallel-size 1
         --enable-prefix-caching
         --load-format fastsafetensors
+        --kv-cache-dtype fp8
         --gpu_memory_utilization 0.15
         --enable-prompt-embeds
         --max-model-len 4096
@@ -107,11 +108,12 @@ services:
       vllm serve qwen/qwen3-reranker-8b
         --host 0.0.0.0
         --port 8000
-        --served-model-name qwen3-reranker-8b
-        --kv-cache-dtype fp8
+        --served-model-name
+        qwen3-reranker-8b
         --tensor-parallel-size 1
         --enable-prefix-caching
         --load-format fastsafetensors
+        --kv-cache-dtype fp8
         --gpu_memory_utilization 0.4
         --max-model-len 4096
         --max-num-seqs 256
@@ -165,18 +167,19 @@ services:
       vllm serve openai/gpt-oss-20b
         --host 0.0.0.0
         --port 8000
-        --served-model-name gpt-oss-20b-4096
+        --served-model-name
+        gpt-oss-20b-4096
         --quantization mxfp4
         --mxfp4-backend CUTLASS
         --mxfp4-layers moe,qkv,o,lm_head
         --attention-backend FLASHINFER
         --kv-cache-dtype fp8
         --tensor-parallel-size 1
+        --enable-prefix-caching
+        --load-format fastsafetensors
         --max-model-len 4096
         --max-num-seqs 512
         --max-num-batched-tokens 32768
-        --enable-prefix-caching
-        --load-format fastsafetensors
         --gpu_memory_utilization 0.4
 
   gpt-oss-20b-32768:
@@ -228,18 +231,19 @@ services:
       vllm serve openai/gpt-oss-20b
         --host 0.0.0.0
         --port 8000
-        --served-model-name gpt-oss-20b-32768
+        --served-model-name
+        gpt-oss-20b-32768
         --quantization mxfp4
         --mxfp4-backend CUTLASS
         --mxfp4-layers moe,qkv,o,lm_head
         --attention-backend FLASHINFER
         --kv-cache-dtype fp8
         --tensor-parallel-size 1
+        --enable-prefix-caching
+        --load-format fastsafetensors
         --max-model-len 32768
         --max-num-seqs 256
         --max-num-batched-tokens 32768
-        --enable-prefix-caching
-        --load-format fastsafetensors
         --gpu_memory_utilization 0.7
 
   gpt-oss-20b-131072:
@@ -291,18 +295,19 @@ services:
       vllm serve openai/gpt-oss-20b
         --host 0.0.0.0
         --port 8000
-        --served-model-name gpt-oss-20b-131072
+        --served-model-name
+        gpt-oss-20b-131072
         --quantization mxfp4
         --mxfp4-backend CUTLASS
         --mxfp4-layers moe,qkv,o,lm_head
         --attention-backend FLASHINFER
         --kv-cache-dtype fp8
         --tensor-parallel-size 1
+        --enable-prefix-caching
+        --load-format fastsafetensors
         --max-model-len 131072
         --max-num-seqs 32
         --max-num-batched-tokens 32768
-        --enable-prefix-caching
-        --load-format fastsafetensors
         --gpu_memory_utilization 0.1
 
   gpt-oss-120b-131072:
@@ -354,18 +359,19 @@ services:
       vllm serve openai/gpt-oss-120b
         --host 0.0.0.0
         --port 8000
-        --served-model-name gpt-oss-120b-131072
+        --served-model-name
+        gpt-oss-120b-131072
         --quantization mxfp4
         --mxfp4-backend CUTLASS
         --mxfp4-layers moe,qkv,o,lm_head
         --attention-backend FLASHINFER
         --kv-cache-dtype fp8
         --tensor-parallel-size 1
+        --enable-prefix-caching
+        --load-format fastsafetensors
         --max-model-len 131072
         --max-num-seqs 3
         --max-num-batched-tokens 65536
-        --enable-prefix-caching
-        --load-format fastsafetensors
         --gpu_memory_utilization 0.7
         --tool-call-parser openai
         --enable-auto-tool-choice
@@ -416,7 +422,8 @@ services:
       vllm serve nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-NVFP4
         --host 0.0.0.0
         --port 8000
-        --served-model-name nemotron-3
+        --served-model-name
+        nemotron-3
         --kv-cache-dtype fp8
         --tensor-parallel-size 1
         --enable-prefix-caching
@@ -468,7 +475,8 @@ services:
       vllm serve zai-org/GLM-4.7-Flash
         --host 0.0.0.0
         --port 8000
-        --served-model-name glm-4.7-flash
+        --served-model-name
+        glm-4.7-flash
         --tensor-parallel-size 1
         --enable-prefix-caching
         --load-format fastsafetensors
@@ -573,7 +581,8 @@ services:
       vllm serve Qwen/Qwen3-Coder-Next-FP8
         --host 0.0.0.0
         --port 8000
-        --served-model-name qwen3-coder-next-fp8
+        --served-model-name
+        qwen3-coder-next-fp8
         --tensor-parallel-size 1
         --enable-prefix-caching
         --load-format fastsafetensors

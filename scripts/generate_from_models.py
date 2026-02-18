@@ -52,6 +52,31 @@ def merge_env(base_env: Any, override_env: Any) -> Dict[str, str]:
     return merged
 
 
+def substitute_command_tokens(value: str, model_name: str, model_repo: str) -> str:
+    return value.replace("$(modelname)", model_name).replace("$(modelrepo)", model_repo)
+
+
+def build_command_from_parts(
+    provider_command: Any,
+    command_append: Any,
+    model_name: str,
+    model_repo: str,
+    command_base: str | None,
+) -> str:
+    if not isinstance(provider_command, list):
+        raise ConfigError("command_append requires provider command to be a list.")
+    if not isinstance(command_append, list):
+        raise ConfigError("command_append must be a list.")
+
+    base = command_base or f"vllm serve {model_repo}"
+    base = substitute_command_tokens(base, model_name, model_repo)
+
+    all_args = [substitute_command_tokens(str(item), model_name, model_repo) for item in provider_command + command_append]
+    lines = [base]
+    lines.extend([f"  {item}" for item in all_args])
+    return "\n".join(lines)
+
+
 def build_provider_index(providers: List[Dict[str, Any]]) -> Dict[Tuple[str, str], Dict[str, Any]]:
     provider_index: Dict[Tuple[str, str], Dict[str, Any]] = {}
     defaults_per_type: Dict[str, int] = {}
@@ -147,8 +172,22 @@ def resolve_models(models_cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
             params = deep_merge(params, model["parameters"])
 
         params["env"] = merge_env(params.get("env"), model.get("env"))
+
         if "command" in model:
             params["command"] = copy.deepcopy(model["command"])
+        elif "command_append" in model:
+            params["command"] = build_command_from_parts(
+                provider_command=params.get("command", []),
+                command_append=model.get("command_append", []),
+                model_name=str(name),
+                model_repo=str(model.get("modelname", name)),
+                command_base=model.get("command_base"),
+            )
+        elif isinstance(params.get("command"), list):
+            params["command"] = [
+                substitute_command_tokens(str(item), str(name), str(model.get("modelname", name)))
+                for item in params["command"]
+            ]
 
         resolved = {
             "name": name,
@@ -159,7 +198,7 @@ def resolve_models(models_cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
         }
 
         for key, value in model.items():
-            if key not in STANDARD_MODEL_KEYS:
+            if key not in STANDARD_MODEL_KEYS.union({"command_append", "command_base"}):
                 resolved[key] = copy.deepcopy(value)
 
         resolved_models.append(resolved)
