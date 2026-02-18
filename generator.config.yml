@@ -1,0 +1,57 @@
+models_file: models.yml
+
+compose:
+  output_file: docker-compose.models.yml
+  container_name_overrides:
+    qwen3-embedding-8b: vllm-qwen3-embedding-8b
+    qwen3-reranker-8b: vllm-qwen3-reranker-8b
+  env_remove_keys:
+    - HF_TOKEN
+  env_add_by_model:
+    nemotron-3-gguf-bf16:
+      HF_TOKEN: ${HF_TOKEN}
+  env_value_overrides:
+    LLAMA_ARG_FLASH_ATTN: "on"
+  verbose_healthcheck:
+    test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+    interval: 30s
+    timeout: 10s
+    retries: 3
+    start_period: 300s
+  header: |-
+    services:
+  footer: |-
+    networks:
+      llama-net:
+        external: true
+        name: llama-net
+
+
+    configs:
+      qdrant_config:
+        content: |
+          log_level: INFO
+
+swap:
+  output_file: config/llama-swap.yaml
+  cmd_up_macro: model_up
+  cmd_down_macro: model_down
+  header: |-
+    healthCheckTimeout: 600
+
+    logLevel: debug
+    logToStdout: proxy
+    macros:
+      model_up: 'docker compose --env-file /app/docker-compose.models.env -f /app/docker-compose.models.yml up --force-recreate'
+      model_down: 'docker compose --env-file /app/docker-compose.models.env -f /app/docker-compose.models.yml down'
+    models:
+  footer: |-
+    groups:
+      "rag-retrive":
+        swap: false
+        exclusive: true
+        members:
+        - qwen3-coder-next-mxfp4
+        - qwen3-embedding-8b
+        - gpt-oss-120b-131072
+        - qwen3-reranker-8b

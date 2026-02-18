@@ -8,43 +8,36 @@ macros:
 models:
   qwen3-embedding-8b:
     proxy: http://qwen3-embedding-8b:8000
-    cmd: ${model_up} qwen3-embedding-8b 
-    cmdStop: ${model_down} qwen3-embedding-8b 
+    cmd: ${model_up} qwen3-embedding-8b
+    cmdStop: ${model_down} qwen3-embedding-8b
     ttl: 600
     concurrencyLimit: 4096
 
   qwen3-reranker-8b:
     proxy: http://qwen3-reranker-8b:8000
-    cmd: ${model_up} qwen3-reranker-8b 
-    cmdStop: ${model_down} qwen3-reranker-8b 
-    ttl: 600
-    concurrencyLimit: 4096
-
-  qwen3-coder-next-fp8:
-    proxy: http://qwen3-coder-next-fp8:8000
-    cmd: ${model_up} qwen3-coder-next-fp8
-    cmdStop: ${model_down} qwen3-coder-next-fp8
+    cmd: ${model_up} qwen3-reranker-8b
+    cmdStop: ${model_down} qwen3-reranker-8b
     ttl: 600
     concurrencyLimit: 4096
 
   gpt-oss-20b-4096:
     proxy: http://gpt-oss-20b-4096:8000
     cmd: ${model_up} gpt-oss-20b-4096
-    cmdStop: ${model_down}  gpt-oss-20b-4096
+    cmdStop: ${model_down} gpt-oss-20b-4096
     ttl: 600
     concurrencyLimit: 4096
 
   gpt-oss-20b-32768:
     proxy: http://gpt-oss-20b-32768:8000
     cmd: ${model_up} gpt-oss-20b-32768
-    cmdStop: ${model_down}  gpt-oss-20b-32768
+    cmdStop: ${model_down} gpt-oss-20b-32768
     ttl: 600
     concurrencyLimit: 4096
 
   gpt-oss-20b-131072:
     proxy: http://gpt-oss-20b-131072:8000
     cmd: ${model_up} gpt-oss-20b-131072
-    cmdStop: ${model_down}  gpt-oss-20b-131072
+    cmdStop: ${model_down} gpt-oss-20b-131072
     ttl: 600
     concurrencyLimit: 4096
 
@@ -52,6 +45,13 @@ models:
     proxy: http://gpt-oss-120b-131072:8000
     cmd: ${model_up} gpt-oss-120b-131072
     cmdStop: ${model_down} gpt-oss-120b-131072
+    ttl: 600
+    concurrencyLimit: 4096
+
+  nemotron-3:
+    proxy: http://nemotron-3:8000
+    cmd: ${model_up} nemotron-3
+    cmdStop: ${model_down} nemotron-3
     ttl: 600
     concurrencyLimit: 4096
 
@@ -69,6 +69,13 @@ models:
     ttl: 600
     concurrencyLimit: 4
 
+  qwen3-coder-next-fp8:
+    proxy: http://qwen3-coder-next-fp8:8000
+    cmd: ${model_up} qwen3-coder-next-fp8
+    cmdStop: ${model_down} qwen3-coder-next-fp8
+    ttl: 600
+    concurrencyLimit: 4096
+
   qwen3-coder-next-mxfp4:
     proxy: http://qwen3-coder-next-mxfp4:8000
     cmd: ${model_up} qwen3-coder-next-mxfp4
@@ -83,6 +90,20 @@ models:
     ttl: 600
     concurrencyLimit: 4096
 
+  nemotron-3-gguf-bf16:
+    proxy: http://nemotron-3-gguf-bf16:8000
+    cmd: ${model_up} nemotron-3-gguf-bf16
+    cmdStop: ${model_down} nemotron-3-gguf-bf16
+    ttl: 600
+    concurrencyLimit: 4096
+
+  glm-4.6v-flash-gguf-bf16:
+    proxy: http://glm-4.6v-flash-gguf-bf16:8000
+    cmd: ${model_up} glm-4.6v-flash-gguf-bf16
+    cmdStop: ${model_down} glm-4.6v-flash-gguf-bf16
+    ttl: 600
+    concurrencyLimit: 4096
+
 groups:
   "rag-retrive":
     swap: false
@@ -92,39 +113,3 @@ groups:
     - qwen3-embedding-8b
     - gpt-oss-120b-131072
     - qwen3-reranker-8b
-    
-  # swapper:
-  #   swap: true
-  #   exclusive: true
-  #   members:
-  #   - vllm-mxfp4-gpt-oss-20b-4096
-  #   - vllm-mxfp4-gpt-oss-20b-32768
-  #   - glm-4.7-flash
-  #   - gpt-oss-20b-131072
-  #   - step-3.5-flash-int4
-  #   - qwen3-embedding-8b
-  #   - gpt-oss-120b-131072
-
-
-#   forever:
-#     persistent: true
-#     swap: false
-#     exclusive: false
-#     members:
-#     - gpt-oss-20b-131072
-# hooks:
-#   on_startup:
-#     preload:
-#     - gpt-oss-20b-131072
-
-# groups:
-#   forever:
-#     persistent: true
-#     swap: false
-#     exclusive: false
-#     members:
-#     - gpt-oss-20b-MXFP4
-# hooks:
-#   on_startup:
-#     preload:
-#     - gpt-oss-20b-MXFP4
